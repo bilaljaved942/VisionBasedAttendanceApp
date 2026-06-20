@@ -35,19 +35,21 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMsg = null;
     });
 
-    // Short delay to simulate network call
-    await Future.delayed(const Duration(milliseconds: 600));
-
     if (!mounted) return;
-    final error = context.read<AppState>().login(
+    final error = await context.read<AppState>().login(
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
         );
 
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
       _errorMsg = error;
     });
+
+    if (error == null) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override

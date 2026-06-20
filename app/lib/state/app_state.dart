@@ -1,178 +1,225 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
 import '../models/user_model.dart';
 import '../models/course_model.dart';
+import '../services/supabase_service.dart';
 
 class AppState extends ChangeNotifier {
-  // ─── Auth ────────────────────────────────────────────
+  // ─── Auth State ───────────────────────────────────────
   UserModel? _currentUser;
+  bool _isCheckingAuth = true;
+  bool _isLoading = false;
+
   UserModel? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
-  bool get isInstructor => _currentUser?.role == UserRole.instructor;
-  bool get isStudent => _currentUser?.role == UserRole.student;
+  bool get isCheckingAuth => _isCheckingAuth;
+  bool get isLoading => _isLoading;
 
-  // ─── Registered users (acts as in-memory DB) ─────────
-  final List<UserModel> _users = [];
-  List<UserModel> get allUsers => List.unmodifiable(_users);
+  // ─── Data Cache ───────────────────────────────────────
+  List<StudentModel> _allStudents = [];
+  List<CourseModel> _myCourses = [];
+  final Map<String, List<AttendanceSession>> _sessionsCache = {};
+  final Map<String, double> _attendanceCache = {};
 
-  List<StudentModel> get allStudents =>
-      _users.whereType<StudentModel>().toList();
-
-  List<InstructorModel> get allInstructors =>
-      _users.whereType<InstructorModel>().toList();
-
-  // ─── Courses ──────────────────────────────────────────
-  final List<CourseModel> _courses = [];
-  List<CourseModel> get allCourses => List.unmodifiable(_courses);
-
-  /// Courses belonging to the currently logged-in instructor
-  List<CourseModel> get myCourses {
-    if (_currentUser == null) return [];
-    return _courses
-        .where((c) => c.instructorId == _currentUser!.id)
-        .toList();
-  }
-
-  /// Courses the currently logged-in student is enrolled in
-  List<CourseModel> get enrolledCourses {
-    if (_currentUser == null) return [];
-    return _courses
-        .where((c) => c.enrolledStudentIds.contains(_currentUser!.id))
-        .toList();
-  }
+  List<StudentModel> get allStudents => List.unmodifiable(_allStudents);
+  List<CourseModel> get myCourses => List.unmodifiable(_myCourses);
+  List<CourseModel> get enrolledCourses => List.unmodifiable(_myCourses);
+  List<CourseModel> get allCourses => List.unmodifiable(_myCourses);
 
   // ─── Active Attendance Session ────────────────────────
-  bool _isSessionActive = false;
-  bool get isSessionActive => _isSessionActive;
-
   CourseModel? _activeSessionCourse;
-  CourseModel? get activeSessionCourse => _activeSessionCourse;
-
   List<AttendanceRecord> _sessionRecords = [];
-  List<AttendanceRecord> get sessionRecords =>
-      List.unmodifiable(_sessionRecords);
-
   Timer? _detectionTimer;
 
-  // ─── Attendance History ───────────────────────────────
-  final List<AttendanceSession> _sessions = [];
-  List<AttendanceSession> get allSessions => List.unmodifiable(_sessions);
+  CourseModel? get activeSessionCourse => _activeSessionCourse;
+  List<AttendanceRecord> get sessionRecords => List.unmodifiable(_sessionRecords);
 
-  // ─── Auth Methods ─────────────────────────────────────
+  // ─── On App Start ─────────────────────────────────────
 
-  /// Returns null on success, or an error message string
-  String? login(String email, String password) {
-    final email_ = email.trim().toLowerCase();
-    final user = _users.firstWhere(
-      (u) =>
-          u.email.toLowerCase() == email_ &&
-          u.password == password,
-      orElse: () => _dummyUser,
-    );
-    if (user == _dummyUser) {
-      return 'Invalid email or password.';
-    }
-    _currentUser = user;
+  Future<void> checkAuthState() async {
+    _isCheckingAuth = true;
     notifyListeners();
+    final session = SupabaseService.client.auth.currentSession;
+    if (session != null) {
+      await _loadCurrentUser();
+    }
+    _isCheckingAuth = false;
+    notifyListeners();
+  }
+
+  // ─── Auth Operations ──────────────────────────────────
+
+  Future<String?> login(String email, String password) async {
+    _setLoading(true);
+    final error =
+        await SupabaseService.signIn(email: email, password: password);
+    if (error != null) {
+      _setLoading(false);
+      return error;
+    }
+    await _loadCurrentUser();
+    _setLoading(false);
     return null;
   }
 
-  String? registerUser(UserModel user) {
-    final existingEmail = _users.any(
-      (u) => u.email.toLowerCase() == user.email.toLowerCase(),
+  Future<String?> registerUser({
+    required String name,
+    required String email,
+    required String password,
+    required UserRole role,
+    String? registrationNumber,
+    String? department,
+    XFile? faceImage,
+  }) async {
+    _setLoading(true);
+    final error = await SupabaseService.signUp(
+      name: name,
+      email: email,
+      password: password,
+      role: role,
+      registrationNumber: registrationNumber,
+      department: department,
+      faceImage: faceImage,
     );
-    if (existingEmail) {
-      return 'An account with this email already exists.';
+    if (error != null) {
+      _setLoading(false);
+      return error;
     }
-    _users.add(user);
-    _currentUser = user;
-    notifyListeners();
+    await _loadCurrentUser();
+    _setLoading(false);
     return null;
   }
 
-  void logout() {
-    stopAttendanceSession();
+  Future<void> logout() async {
+    _stopDetectionTimer();
+    await SupabaseService.signOut();
     _currentUser = null;
+    _allStudents = [];
+    _myCourses = [];
+    _sessionsCache.clear();
+    _attendanceCache.clear();
+    _activeSessionCourse = null;
+    _sessionRecords = [];
+    notifyListeners();
+  }
+
+  // ─── Data Loading ─────────────────────────────────────
+
+  Future<void> _loadCurrentUser() async {
+    final uid = SupabaseService.client.auth.currentUser?.id;
+    if (uid == null) return;
+    _currentUser = await SupabaseService.getProfile(uid);
+    if (_currentUser != null) await _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    if (_currentUser == null) return;
+    if (_currentUser!.role == UserRole.instructor) {
+      _allStudents =
+          await SupabaseService.getAllStudents();
+      _myCourses =
+          await SupabaseService.getInstructorCourses(_currentUser!.id);
+    } else {
+      _myCourses =
+          await SupabaseService.getStudentCourses(_currentUser!.id);
+      for (final course in _myCourses) {
+        _sessionsCache[course.id] =
+            await SupabaseService.getSessionsForCourse(course.id);
+        _attendanceCache[course.id] =
+            await SupabaseService.getStudentAttendance(
+                _currentUser!.id, course.id);
+      }
+    }
+  }
+
+  Future<void> refreshCourses() async {
+    if (_currentUser == null) return;
+    if (_currentUser!.role == UserRole.instructor) {
+      _myCourses =
+          await SupabaseService.getInstructorCourses(_currentUser!.id);
+    } else {
+      _myCourses =
+          await SupabaseService.getStudentCourses(_currentUser!.id);
+    }
     notifyListeners();
   }
 
   // ─── Course Management ────────────────────────────────
 
-  void createCourse(CourseModel course) {
-    _courses.add(course);
-    notifyListeners();
-  }
-
-  void updateCourse(CourseModel updated) {
-    final idx = _courses.indexWhere((c) => c.id == updated.id);
-    if (idx != -1) {
-      _courses[idx] = updated;
+  Future<String?> createCourse(CourseModel course) async {
+    final created = await SupabaseService.createCourse(course);
+    if (created != null) {
+      _myCourses = [created, ..._myCourses];
       notifyListeners();
+      return null;
+    }
+    return 'Failed to create course. Please try again.';
+  }
+
+  Future<void> deleteCourse(String courseId) async {
+    await SupabaseService.deleteCourse(courseId);
+    _myCourses = _myCourses.where((c) => c.id != courseId).toList();
+    notifyListeners();
+  }
+
+  Future<String?> enrollStudent(String courseId, String studentId) async {
+    final error =
+        await SupabaseService.enrollStudent(courseId, studentId);
+    if (error == null) await refreshCourses();
+    return error;
+  }
+
+  Future<void> removeStudentFromCourse(
+      String courseId, String studentId) async {
+    await SupabaseService.removeStudent(courseId, studentId);
+    await refreshCourses();
+  }
+
+  // ─── Data Accessors ───────────────────────────────────
+
+  StudentModel? getStudentById(String id) {
+    try {
+      return _allStudents.firstWhere((s) => s.id == id);
+    } catch (_) {
+      return null;
     }
   }
 
-  void deleteCourse(String courseId) {
-    _courses.removeWhere((c) => c.id == courseId);
-    notifyListeners();
-  }
+  List<AttendanceSession> getSessionsForCourse(String courseId) =>
+      _sessionsCache[courseId] ?? [];
 
-  /// Enroll a student into a course
-  String? enrollStudent(String courseId, String studentId) {
-    final idx = _courses.indexWhere((c) => c.id == courseId);
-    if (idx == -1) return 'Course not found.';
-    if (_courses[idx].enrolledStudentIds.contains(studentId)) {
-      return 'Student is already enrolled.';
-    }
-    final updated = List<String>.from(_courses[idx].enrolledStudentIds)
-      ..add(studentId);
-    _courses[idx] = _courses[idx].copyWith(enrolledStudentIds: updated);
-    notifyListeners();
-    return null;
-  }
+  double getStudentAttendance(String studentId, String courseId) =>
+      _attendanceCache[courseId] ?? 0.0;
 
-  /// Remove a student from a course
-  void removeStudentFromCourse(String courseId, String studentId) {
-    final idx = _courses.indexWhere((c) => c.id == courseId);
-    if (idx == -1) return;
-    final updated = List<String>.from(_courses[idx].enrolledStudentIds)
-      ..remove(studentId);
-    _courses[idx] = _courses[idx].copyWith(enrolledStudentIds: updated);
-    notifyListeners();
-  }
-
-  // ─── Attendance Session ───────────────────────────────
+  // ─── Attendance Session (local simulation) ────────────
 
   void startAttendanceSession(CourseModel course) {
     _activeSessionCourse = course;
-    _isSessionActive = true;
-
-    // Initialize all enrolled students as Absent
     _sessionRecords = course.enrolledStudentIds
-        .map((sid) => AttendanceRecord(studentId: sid))
+        .map((id) => AttendanceRecord(studentId: id))
         .toList();
-
     notifyListeners();
 
-    // Simulate face detection: every 2.5 seconds, detect a random absent student
     _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 2500), (timer) {
+        Timer.periodic(const Duration(milliseconds: 2500), (_) {
       _simulateDetection();
     });
   }
 
   void _simulateDetection() {
-    final absent = _sessionRecords.where((r) => !r.isPresent).toList();
+    final absent =
+        _sessionRecords.where((r) => !r.isPresent).toList();
     if (absent.isEmpty) {
-      _detectionTimer?.cancel();
+      _stopDetectionTimer();
       return;
     }
     final rng = Random();
-    // 80% chance to detect a student on each tick
     if (rng.nextDouble() < 0.80) {
       final target = absent[rng.nextInt(absent.length)];
-      final idx =
-          _sessionRecords.indexWhere((r) => r.studentId == target.studentId);
+      final idx = _sessionRecords
+          .indexWhere((r) => r.studentId == target.studentId);
       if (idx != -1) {
         _sessionRecords[idx].isPresent = true;
         _sessionRecords[idx].detectedAt = DateTime.now();
@@ -182,7 +229,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Manually toggle a student's attendance during session
   void toggleStudentAttendance(String studentId) {
     final idx =
         _sessionRecords.indexWhere((r) => r.studentId == studentId);
@@ -190,7 +236,7 @@ class AppState extends ChangeNotifier {
       _sessionRecords[idx].isPresent = !_sessionRecords[idx].isPresent;
       if (_sessionRecords[idx].isPresent) {
         _sessionRecords[idx].detectedAt = DateTime.now();
-        _sessionRecords[idx].confidence = 1.0; // manual = 100%
+        _sessionRecords[idx].confidence = 1.0;
       } else {
         _sessionRecords[idx].detectedAt = null;
         _sessionRecords[idx].confidence = null;
@@ -199,75 +245,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void stopAttendanceSession() {
-    _detectionTimer?.cancel();
-    _isSessionActive = false;
+  Future<void> saveAndEndSession() async {
+    _stopDetectionTimer();
+    if (_activeSessionCourse != null && _currentUser != null) {
+      await SupabaseService.saveAttendanceSession(
+        courseId: _activeSessionCourse!.id,
+        instructorId: _currentUser!.id,
+        records: List.from(_sessionRecords),
+      );
+    }
     _activeSessionCourse = null;
     _sessionRecords = [];
     notifyListeners();
   }
 
-  void saveAndEndSession() {
+  // ─── Helpers ──────────────────────────────────────────
+
+  void _setLoading(bool v) {
+    _isLoading = v;
+    notifyListeners();
+  }
+
+  void _stopDetectionTimer() {
     _detectionTimer?.cancel();
-    if (_activeSessionCourse != null) {
-      final session = AttendanceSession(
-        id: generateId(),
-        courseId: _activeSessionCourse!.id,
-        instructorId: _currentUser!.id,
-        date: DateTime.now(),
-        records: List.from(_sessionRecords),
-      );
-      _sessions.add(session);
-    }
-    stopAttendanceSession();
+    _detectionTimer = null;
   }
-
-  // ─── Query Helpers ────────────────────────────────────
-
-  UserModel? getUserById(String id) {
-    try {
-      return _users.firstWhere((u) => u.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  StudentModel? getStudentById(String id) {
-    try {
-      return _users.whereType<StudentModel>().firstWhere((s) => s.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Get sessions for a specific course
-  List<AttendanceSession> getSessionsForCourse(String courseId) =>
-      _sessions.where((s) => s.courseId == courseId).toList();
-
-  /// Get attendance percentage for a student in a course
-  double getStudentAttendance(String studentId, String courseId) {
-    final sessions = getSessionsForCourse(courseId);
-    if (sessions.isEmpty) return 0.0;
-    final present = sessions
-        .where((s) => s.records.any(
-              (r) => r.studentId == studentId && r.isPresent,
-            ))
-        .length;
-    return (present / sessions.length) * 100;
-  }
-
-  // Sentinel user used to signal "not found" in firstWhere
-  static final _dummyUser = UserModel(
-    id: '__dummy__',
-    name: '',
-    email: '',
-    password: '',
-    role: UserRole.student,
-  );
 
   @override
   void dispose() {
-    _detectionTimer?.cancel();
+    _stopDetectionTimer();
     super.dispose();
   }
 }

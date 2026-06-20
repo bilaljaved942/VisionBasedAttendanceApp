@@ -102,36 +102,21 @@ class _SignupScreenState extends State<SignupScreen> {
       _error = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 500));
-
     if (!mounted) return;
 
-    final id = generateId();
-    UserModel newUser;
-
-    if (_selectedRole == UserRole.instructor) {
-      newUser = InstructorModel(
-        id: id,
-        name: _nameCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-        department: _deptCtrl.text.trim().isEmpty
-            ? null
-            : _deptCtrl.text.trim(),
-        faceImagePath: _capturedImage?.path,
-      );
-    } else {
-      newUser = StudentModel(
-        id: id,
-        name: _nameCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-        registrationNumber: _regNumCtrl.text.trim(),
-        faceImagePath: _capturedImage?.path,
-      );
-    }
-
-    final errMsg = context.read<AppState>().registerUser(newUser);
+    final errMsg = await context.read<AppState>().registerUser(
+          name: _nameCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+          password: _passCtrl.text,
+          role: _selectedRole!,
+          registrationNumber: _selectedRole == UserRole.student
+              ? _regNumCtrl.text.trim()
+              : null,
+          department: _selectedRole == UserRole.instructor
+              ? (_deptCtrl.text.trim().isEmpty ? null : _deptCtrl.text.trim())
+              : null,
+          faceImage: _capturedImage,
+        );
 
     if (!mounted) return;
     setState(() {
@@ -140,10 +125,10 @@ class _SignupScreenState extends State<SignupScreen> {
     });
 
     if (errMsg != null) {
-      // Go back to details step on error
       _goToStep(_Step.details);
+    } else {
+      Navigator.of(context).pop();
     }
-    // If null → AppState sets currentUser → _AppRouter navigates automatically
   }
 
   // ─── Build ────────────────────────────────────────────
@@ -179,6 +164,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget _buildHeader() {
     final stepIndex = _Step.values.indexOf(_currentStep);
     final titles = ['Choose role', 'Your details', 'Face capture'];
+    final totalSteps = _selectedRole == UserRole.instructor ? 2 : 3;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 8),
@@ -209,7 +195,7 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               const Spacer(),
               Text(
-                'Step ${stepIndex + 1} of ${_Step.values.length}',
+                'Step ${stepIndex + 1} of $totalSteps',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -218,10 +204,10 @@ class _SignupScreenState extends State<SignupScreen> {
 
           // Progress bar
           Row(
-            children: List.generate(_Step.values.length, (i) {
+            children: List.generate(totalSteps, (i) {
               return Expanded(
                 child: Container(
-                  margin: EdgeInsets.only(right: i < _Step.values.length - 1 ? 6 : 0),
+                  margin: EdgeInsets.only(right: i < totalSteps - 1 ? 6 : 0),
                   height: 4,
                   decoration: BoxDecoration(
                     color: i <= stepIndex
@@ -449,11 +435,16 @@ class _SignupScreenState extends State<SignupScreen> {
 
             const SizedBox(height: 32),
             AppButtonFull(
-              label: 'Continue',
+              label: isInstructor ? 'Complete' : 'Continue',
+              isLoading: isInstructor && _isLoading,
               onPressed: () {
                 if (_formKey.currentState?.validate() ?? false) {
-                  _goToStep(_Step.face);
-                  _initCamera();
+                  if (isInstructor) {
+                    _completeRegistration();
+                  } else {
+                    _goToStep(_Step.face);
+                    _initCamera();
+                  }
                 }
               },
             ),

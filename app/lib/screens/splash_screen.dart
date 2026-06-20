@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import 'auth/login_screen.dart';
+import 'auth/signup_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -141,7 +142,7 @@ class _SplashScreenState extends State<SplashScreen>
   void _navigate(BuildContext context, {required bool isSignup}) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => LoginScreen(startOnSignup: isSignup),
+        builder: (_) => isSignup ? const SignupScreen() : const LoginScreen(),
       ),
     );
   }
