@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../models/user_model.dart';
+import 'register_face_screen.dart';
 
 class StudentHome extends StatelessWidget {
   const StudentHome({super.key});
@@ -83,6 +84,78 @@ class StudentHome extends StatelessWidget {
             ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
+
+            // ─── Face biometrics warning if missing ──────────
+            if (user.faceImagePath == null || user.faceImagePath!.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
+                      border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded,
+                                color: AppColors.error, size: 22),
+                            SizedBox(width: 8),
+                            Text(
+                              'Face Biometrics Missing',
+                              style: TextStyle(
+                                color: AppColors.error,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'You skipped face capture during registration. You must register your face to allow teachers to mark your attendance automatically.',
+                          style: TextStyle(
+                            color: AppColors.error,
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterFaceScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.face_retouching_natural, size: 18),
+                            label: const Text('Register Face Now'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.error,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppRadius.pill),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
             // ─── Attendance overview card ─────────────────────
             SliverToBoxAdapter(

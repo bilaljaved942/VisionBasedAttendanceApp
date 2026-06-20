@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import '../models/course_model.dart';
 import '../services/supabase_service.dart';
@@ -90,6 +91,35 @@ class AppState extends ChangeNotifier {
     await _loadCurrentUser();
     _setLoading(false);
     return null;
+  }
+
+  Future<String?> updateStudentFaceImage(XFile file) async {
+    if (_currentUser == null) return 'No user logged in';
+    _setLoading(true);
+    try {
+      final bytes = await file.readAsBytes();
+      final fileExt = file.path.split('.').last;
+      final fileName = '${_currentUser!.id}.$fileExt';
+      
+      await SupabaseService.client.storage.from('face-images').uploadBinary(
+        fileName,
+        bytes,
+        fileOptions: const FileOptions(upsert: true),
+      );
+      
+      final faceUrl = SupabaseService.client.storage.from('face-images').getPublicUrl(fileName);
+      
+      await SupabaseService.client.from('profiles').update({
+        'face_url': faceUrl,
+      }).eq('id', _currentUser!.id);
+      
+      await _loadCurrentUser();
+      _setLoading(false);
+      return null;
+    } catch (e) {
+      _setLoading(false);
+      return 'Failed to upload image: $e';
+    }
   }
 
   Future<void> logout() async {

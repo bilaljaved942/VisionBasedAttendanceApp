@@ -45,7 +45,7 @@ class FloatingNavBar extends StatelessWidget {
                   curve: Curves.easeInOut,
                   margin: const EdgeInsets.all(8),
                   padding: EdgeInsets.symmetric(
-                    horizontal: isSelected ? 16 : 0,
+                    horizontal: isSelected ? 10 : 0,
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
@@ -64,12 +64,16 @@ class FloatingNavBar extends StatelessWidget {
                       ),
                       if (isSelected) ...[
                         const SizedBox(width: 6),
-                        Text(
-                          item.label,
-                          style: const TextStyle(
-                            color: AppColors.navBar,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.navBar,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
