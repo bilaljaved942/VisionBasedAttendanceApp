@@ -8,8 +8,17 @@ import face_recognition
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
+from PIL import Image, ImageOps
 
 app = FastAPI(title="FAST Attendance Face Recognition API")
+
+def load_image_file_upright(file, mode='RGB'):
+    im = Image.open(file)
+    im = ImageOps.exif_transpose(im)
+    if mode:
+        im = im.convert(mode)
+    return np.array(im)
+
 
 # Setup CORS
 app.add_middleware(
@@ -91,7 +100,7 @@ async def get_course_student_encodings(course_id: str):
                         img_bytes = img_response.content
                         img_file = io.BytesIO(img_bytes)
                         # Load image with face_recognition and extract 128-d encoding vector
-                        student_image = face_recognition.load_image_file(img_file)
+                        student_image = load_image_file_upright(img_file)
                         student_encodings = face_recognition.face_encodings(student_image)
                         if student_encodings:
                             encoding = student_encodings[0]
@@ -132,7 +141,7 @@ async def recognize_faces(
     try:
         frame_bytes = await file.read()
         frame_file = io.BytesIO(frame_bytes)
-        frame_image = face_recognition.load_image_file(frame_file)
+        frame_image = load_image_file_upright(frame_file)
     except Exception as e:
         print(f"Failed to parse uploaded image: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid image file: {e}")
