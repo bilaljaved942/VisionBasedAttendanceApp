@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../models/course_model.dart';
@@ -38,14 +42,31 @@ class _CameraScreenState extends State<CameraScreen>
   // Panel expanded state
   bool _panelExpanded = true;
 
+  // Face recognition API properties
+  Timer? _frameTimer;
+  bool _isAnalyzing = false;
+  String? _apiUrl;
+  bool _backendConnected = true;
+  bool _simulationFallbackActive = false;
+
   @override
   void initState() {
     super.initState();
 
-    // Start simulated session
+    _apiUrl = dotenv.env['RECOGNITION_API_URL'];
+    final hasApi = _apiUrl != null && _apiUrl!.isNotEmpty;
+
+    // Start simulated or live session
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().startAttendanceSession(widget.course);
+      context.read<AppState>().startAttendanceSession(widget.course, useSimulation: !hasApi);
     });
+
+    if (hasApi) {
+      _startFrameCaptureLoop();
+    } else {
+      _backendConnected = false;
+      _simulationFallbackActive = true;
+    }
 
     // Scanning line anim
     _scanAnim = AnimationController(
@@ -63,6 +84,76 @@ class _CameraScreenState extends State<CameraScreen>
     )..repeat(reverse: true);
 
     _initCamera();
+  }
+
+  void _startFrameCaptureLoop() {
+    _frameTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _captureAndAnalyzeFrame();
+    });
+  }
+
+  Future<void> _captureAndAnalyzeFrame() async {
+    if (!_cameraReady || _cameraController == null || _cameraError || _isAnalyzing) return;
+    if (_cameraController!.value.isTakingPicture) return;
+
+    if (mounted) setState(() => _isAnalyzing = true);
+
+    try {
+      final file = await _cameraController!.takePicture();
+      final bytes = await file.readAsBytes();
+
+      final uri = Uri.parse('$_apiUrl/recognize');
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['course_id'] = widget.course.id
+        ..files.add(http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: 'frame.jpg',
+        ));
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 4));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List detected = data['detected'] ?? [];
+
+        if (mounted) {
+          final state = context.read<AppState>();
+          for (final d in detected) {
+            final studentId = d['student_id'];
+            final confidence = (d['confidence'] as num?)?.toDouble() ?? 1.0;
+            state.markStudentPresent(studentId, confidence);
+          }
+          if (!_backendConnected || _simulationFallbackActive) {
+            setState(() {
+              _backendConnected = true;
+              _simulationFallbackActive = false;
+            });
+          }
+        }
+      } else {
+        _handleApiFailure();
+      }
+    } catch (_) {
+      _handleApiFailure();
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+      }
+    }
+  }
+
+  void _handleApiFailure() {
+    if (!_simulationFallbackActive) {
+      if (mounted) {
+        setState(() {
+          _backendConnected = false;
+          _simulationFallbackActive = true;
+        });
+        context.read<AppState>().enableFallbackSimulation();
+      }
+    }
   }
 
   Future<void> _initCamera() async {
@@ -91,6 +182,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void dispose() {
+    _frameTimer?.cancel();
     _cameraController?.dispose();
     _scanAnim.dispose();
     _pulseAnim.dispose();
@@ -198,6 +290,41 @@ class _CameraScreenState extends State<CameraScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
+
+                    // Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _backendConnected
+                            ? AppColors.success.withValues(alpha: 0.25)
+                            : AppColors.error.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _backendConnected ? AppColors.success : AppColors.error,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _backendConnected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                            color: _backendConnected ? AppColors.success : AppColors.error,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _backendConnected
+                                ? (_isAnalyzing ? 'Scanning...' : 'Live AI')
+                                : 'Offline (Sim)',
+                            style: TextStyle(
+                              color: _backendConnected ? AppColors.success : AppColors.error,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
 
                     // Course name pill
                     Expanded(

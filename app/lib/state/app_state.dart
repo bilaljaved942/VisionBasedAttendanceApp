@@ -264,17 +264,19 @@ class AppState extends ChangeNotifier {
 
   // ─── Attendance Session (local simulation) ────────────
 
-  void startAttendanceSession(CourseModel course) {
+  void startAttendanceSession(CourseModel course, {bool useSimulation = true}) {
     _activeSessionCourse = course;
     _sessionRecords = course.enrolledStudentIds
         .map((id) => AttendanceRecord(studentId: id))
         .toList();
     notifyListeners();
 
-    _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 2500), (_) {
-      _simulateDetection();
-    });
+    if (useSimulation) {
+      _detectionTimer =
+          Timer.periodic(const Duration(milliseconds: 2500), (_) {
+        _simulateDetection();
+      });
+    }
   }
 
   void _simulateDetection() {
@@ -310,6 +312,29 @@ class AppState extends ChangeNotifier {
         _sessionRecords[idx].detectedAt = null;
         _sessionRecords[idx].confidence = null;
       }
+      notifyListeners();
+    }
+  }
+
+  void markStudentPresent(String studentId, double confidence) {
+    final idx =
+        _sessionRecords.indexWhere((r) => r.studentId == studentId);
+    if (idx != -1) {
+      if (!_sessionRecords[idx].isPresent) {
+        _sessionRecords[idx].isPresent = true;
+        _sessionRecords[idx].detectedAt = DateTime.now();
+        _sessionRecords[idx].confidence = confidence;
+        notifyListeners();
+      }
+    }
+  }
+
+  void enableFallbackSimulation() {
+    if (_detectionTimer == null && _activeSessionCourse != null) {
+      _detectionTimer =
+          Timer.periodic(const Duration(milliseconds: 2500), (_) {
+        _simulateDetection();
+      });
       notifyListeners();
     }
   }
