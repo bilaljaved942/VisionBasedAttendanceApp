@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
@@ -40,7 +41,7 @@ class SupabaseService {
           faceUrl = client.storage.from('face-images').getPublicUrl(fileName);
         } catch (e) {
           // ignore storage upload failures and proceed with null face_url
-          print('Supabase Storage Upload Error: $e');
+          debugPrint('Supabase Storage Upload Error: $e');
         }
       }
 
@@ -203,6 +204,20 @@ class SupabaseService {
     await client.from('courses').delete().eq('id', courseId);
   }
 
+  static Future<bool> updateCourse(CourseModel course) async {
+    try {
+      await client.from('courses').update({
+        'name': course.name,
+        'code': course.code,
+        'section': course.section,
+        'semester': course.semester,
+      }).eq('id', course.id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ─── ENROLLMENTS ──────────────────────────────────────
 
   static Future<String?> enrollStudent(
@@ -235,6 +250,8 @@ class SupabaseService {
   static Future<void> saveAttendanceSession({
     required String courseId,
     required String instructorId,
+    required String lectureName,
+    required DateTime date,
     required List<AttendanceRecord> records,
   }) async {
     try {
@@ -244,6 +261,8 @@ class SupabaseService {
           .insert({
             'course_id': courseId,
             'instructor_id': instructorId,
+            'lecture_name': lectureName,
+            'date': date.toIso8601String(),
           })
           .select()
           .single();
@@ -295,6 +314,7 @@ class SupabaseService {
           courseId: s['course_id'],
           instructorId: s['instructor_id'],
           date: DateTime.parse(s['date'] as String),
+          lectureName: s['lecture_name'] ?? 'Class Session',
           records: records,
         );
       }).toList();

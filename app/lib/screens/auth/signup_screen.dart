@@ -380,8 +380,9 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6)
+                if (v.length < 6) {
                   return 'Password must be at least 6 characters';
+                }
                 return null;
               },
             ),
@@ -437,12 +438,14 @@ class _SignupScreenState extends State<SignupScreen> {
             AppButtonFull(
               label: isInstructor ? 'Complete' : 'Continue',
               isLoading: isInstructor && _isLoading,
-              onPressed: () {
+              onPressed: () async {
                 if (_formKey.currentState?.validate() ?? false) {
                   if (isInstructor) {
                     _completeRegistration();
                   } else {
                     _goToStep(_Step.face);
+                    // Wait for the step transition animation to complete before starting camera hardware
+                    await Future.delayed(const Duration(milliseconds: 400));
                     _initCamera();
                   }
                 }

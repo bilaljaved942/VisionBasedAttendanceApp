@@ -60,6 +60,7 @@ class AttendanceSession {
   final String courseId;
   final String instructorId;
   final DateTime date;
+  final String lectureName;
   final List<AttendanceRecord> records;
 
   AttendanceSession({
@@ -67,6 +68,7 @@ class AttendanceSession {
     required this.courseId,
     required this.instructorId,
     required this.date,
+    required this.lectureName,
     required this.records,
   });
 

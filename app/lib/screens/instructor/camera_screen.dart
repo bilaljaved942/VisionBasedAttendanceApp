@@ -8,7 +8,15 @@ import '../../models/user_model.dart';
 
 class CameraScreen extends StatefulWidget {
   final CourseModel course;
-  const CameraScreen({super.key, required this.course});
+  final String lectureName;
+  final DateTime date;
+
+  const CameraScreen({
+    super.key,
+    required this.course,
+    required this.lectureName,
+    required this.date,
+  });
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -104,7 +112,10 @@ class _CameraScreenState extends State<CameraScreen>
               child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
-              context.read<AppState>().saveAndEndSession();
+              context.read<AppState>().saveAndEndSession(
+                lectureName: widget.lectureName,
+                date: widget.date,
+              );
               Navigator.pop(context); // close dialog
               Navigator.pop(context); // go back to attendance screen
             },
@@ -150,7 +161,7 @@ class _CameraScreenState extends State<CameraScreen>
             Positioned.fill(
               child: AnimatedBuilder(
                 animation: _scanAnim,
-                builder: (_, __) => CustomPaint(
+                builder: (_, _) => CustomPaint(
                   painter: _ScanOverlayPainter(
                     scanProgress: _scanLine.value,
                     pulseValue: _pulseAnim.value,

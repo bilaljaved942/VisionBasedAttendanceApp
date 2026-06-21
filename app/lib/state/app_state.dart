@@ -166,13 +166,24 @@ class AppState extends ChangeNotifier {
 
   Future<void> refreshCourses() async {
     if (_currentUser == null) return;
-    if (_currentUser!.role == UserRole.instructor) {
-      _myCourses =
-          await SupabaseService.getInstructorCourses(_currentUser!.id);
-    } else {
-      _myCourses =
-          await SupabaseService.getStudentCourses(_currentUser!.id);
-    }
+    _setLoading(true);
+    try {
+      if (_currentUser!.role == UserRole.instructor) {
+        _myCourses =
+            await SupabaseService.getInstructorCourses(_currentUser!.id);
+      } else {
+        _myCourses =
+            await SupabaseService.getStudentCourses(_currentUser!.id);
+        for (final course in _myCourses) {
+          _sessionsCache[course.id] =
+              await SupabaseService.getSessionsForCourse(course.id);
+          _attendanceCache[course.id] =
+              await SupabaseService.getStudentAttendance(
+                  _currentUser!.id, course.id);
+        }
+      }
+    } catch (_) {}
+    _setLoading(false);
     notifyListeners();
   }
 
@@ -192,6 +203,22 @@ class AppState extends ChangeNotifier {
     await SupabaseService.deleteCourse(courseId);
     _myCourses = _myCourses.where((c) => c.id != courseId).toList();
     notifyListeners();
+  }
+
+  Future<String?> updateCourse(CourseModel course) async {
+    final success = await SupabaseService.updateCourse(course);
+    if (success) {
+      final idx = _myCourses.indexWhere((c) => c.id == course.id);
+      if (idx != -1) {
+        final updatedCourse = course.copyWith(
+          enrolledStudentIds: _myCourses[idx].enrolledStudentIds,
+        );
+        _myCourses[idx] = updatedCourse;
+        notifyListeners();
+      }
+      return null;
+    }
+    return 'Failed to update course. Please try again.';
   }
 
   Future<String?> enrollStudent(String courseId, String studentId) async {
@@ -219,6 +246,18 @@ class AppState extends ChangeNotifier {
 
   List<AttendanceSession> getSessionsForCourse(String courseId) =>
       _sessionsCache[courseId] ?? [];
+
+  Future<void> loadSessionsForCourse(String courseId) async {
+    _setLoading(true);
+    try {
+      final sessions = await SupabaseService.getSessionsForCourse(courseId);
+      _sessionsCache[courseId] = sessions;
+    } catch (_) {
+      // keep empty
+    }
+    _setLoading(false);
+    notifyListeners();
+  }
 
   double getStudentAttendance(String studentId, String courseId) =>
       _attendanceCache[courseId] ?? 0.0;
@@ -275,12 +314,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> saveAndEndSession() async {
+  Future<void> saveAndEndSession({
+    required String lectureName,
+    required DateTime date,
+  }) async {
     _stopDetectionTimer();
     if (_activeSessionCourse != null && _currentUser != null) {
       await SupabaseService.saveAttendanceSession(
         courseId: _activeSessionCourse!.id,
         instructorId: _currentUser!.id,
+        lectureName: lectureName,
+        date: date,
         records: List.from(_sessionRecords),
       );
     }

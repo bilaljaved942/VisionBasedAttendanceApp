@@ -85,6 +85,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                                     CourseDetailScreen(course: course),
                               ),
                             ),
+                            onEdit: () => _showEditCourseSheet(context, state, course),
                             onDelete: () =>
                                 _confirmDelete(context, state, course),
                           ),
@@ -125,6 +126,22 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
+  void _showEditCourseSheet(BuildContext context, AppState state, CourseModel course) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (ctx) => _CreateCourseSheet(
+        instructorId: state.currentUser!.id,
+        courseToEdit: course,
+        onCreate: state.updateCourse,
+      ),
+    );
+  }
+
   void _confirmDelete(
       BuildContext context, AppState state, CourseModel course) {
     showDialog(
@@ -157,11 +174,13 @@ class _CoursesScreenState extends State<CoursesScreen> {
 class _CourseCard extends StatelessWidget {
   final CourseModel course;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _CourseCard({
     required this.course,
     required this.onTap,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -170,122 +189,124 @@ class _CourseCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.lg),
           border: const Border.fromBorderSide(
               BorderSide(color: AppColors.border)),
         ),
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 16, 16),
-              child: Row(
+            // Course icon
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: Text(
+                  course.code.split('-').first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Course icon
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: Text(
-                        course.code.split('-').first,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                          ),
+                          child: Text(
+                            course.code,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          course.name,
-                          style: Theme.of(context).textTheme.titleMedium,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          '${course.semester} Sem',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          course.displayLabel,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${course.semester} Semester',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Actions
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_horiz, size: 22),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    onSelected: (v) {
-                      if (v == 'delete') onDelete();
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(children: [
-                            Icon(Icons.delete_outline_rounded,
-                                size: 18, color: AppColors.error),
-                            SizedBox(width: 8),
-                            Text('Delete',
-                                style: TextStyle(color: AppColors.error)),
-                          ])),
+                      ),
                     ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    course.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Section ${course.section}  •  ${course.enrolledCount} enrolled',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 12),
 
-            // Bottom row
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: const BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.vertical(
-                    bottom: Radius.circular(AppRadius.lg)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.people_outline_rounded,
-                      size: 16, color: AppColors.textSecondary),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${course.enrolledCount} students enrolled',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      const Text(
-                        'View',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios_rounded,
-                          size: 11, color: AppColors.primary),
-                    ],
-                  ),
-                ],
-              ),
+            // Actions dropdown
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppColors.textSecondary),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              onSelected: (v) {
+                if (v == 'edit') onEdit();
+                if (v == 'delete') onDelete();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(children: [
+                      Icon(Icons.edit_outlined,
+                          size: 18, color: AppColors.textPrimary),
+                      SizedBox(width: 8),
+                      Text('Edit'),
+                    ])),
+                const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: [
+                      Icon(Icons.delete_outline_rounded,
+                          size: 18, color: AppColors.error),
+                      SizedBox(width: 8),
+                      Text('Delete',
+                          style: TextStyle(color: AppColors.error)),
+                    ])),
+              ],
             ),
           ],
         ),
@@ -332,10 +353,12 @@ class _EmptyCourses extends StatelessWidget {
 // ─── Create Course Sheet ──────────────────────────────
 class _CreateCourseSheet extends StatefulWidget {
   final String instructorId;
+  final CourseModel? courseToEdit;
   final void Function(CourseModel) onCreate;
 
   const _CreateCourseSheet({
     required this.instructorId,
+    this.courseToEdit,
     required this.onCreate,
   });
 
@@ -351,6 +374,17 @@ class _CreateCourseSheetState extends State<_CreateCourseSheet> {
   final _semesterCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.courseToEdit != null) {
+      _nameCtrl.text = widget.courseToEdit!.name;
+      _codeCtrl.text = widget.courseToEdit!.code;
+      _sectionCtrl.text = widget.courseToEdit!.section;
+      _semesterCtrl.text = widget.courseToEdit!.semester;
+    }
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _codeCtrl.dispose();
@@ -362,7 +396,7 @@ class _CreateCourseSheetState extends State<_CreateCourseSheet> {
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final course = CourseModel(
-      id: generateId(),
+      id: widget.courseToEdit?.id ?? generateId(),
       name: _nameCtrl.text.trim(),
       code: _codeCtrl.text.trim().toUpperCase(),
       section: _sectionCtrl.text.trim(),
@@ -375,41 +409,45 @@ class _CreateCourseSheetState extends State<_CreateCourseSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.courseToEdit != null;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 20),
       child: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text('Create New Course',
-                style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              Text(isEditing ? 'Edit Course Details' : 'Create New Course',
+                  style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 24),
 
-            _field('Course Name', _nameCtrl, 'e.g. Computer Vision'),
-            const SizedBox(height: 14),
-            _field('Course Code', _codeCtrl, 'e.g. CS-301'),
-            const SizedBox(height: 14),
-            _field('Section', _sectionCtrl, 'e.g. Section A'),
-            const SizedBox(height: 14),
-            _field('Semester', _semesterCtrl, 'e.g. Spring 2026'),
-            const SizedBox(height: 28),
+              _field('Course Name', _nameCtrl, 'e.g. Computer Vision'),
+              const SizedBox(height: 14),
+              _field('Course Code', _codeCtrl, 'e.g. CS-301'),
+              const SizedBox(height: 14),
+              _field('Section', _sectionCtrl, 'e.g. Section A'),
+              const SizedBox(height: 14),
+              _field('Semester', _semesterCtrl, 'e.g. Spring 2026'),
+              const SizedBox(height: 28),
 
-            AppButtonFull(label: 'Create Course', onPressed: _submit),
-          ],
+              AppButtonFull(label: isEditing ? 'Save Changes' : 'Create Course', onPressed: _submit),
+            ],
+          ),
         ),
       ),
     );

@@ -22,7 +22,10 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
   @override
   void initState() {
     super.initState();
-    _initCamera();
+    // Delay camera initialization to allow screen navigation transition to complete smoothly
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _initCamera();
+    });
   }
 
   @override
